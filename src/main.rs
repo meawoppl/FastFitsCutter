@@ -6,7 +6,7 @@ use fitsio::FitsFile;
 use fitsrs::hdu::header::extension::image::Image;
 use fitsrs::hdu::header::Header;
 use rayon::prelude::*;
-use wcs::{ImgXY, LonLat, WCS};
+use wcs::{LonLat, WCS};
 
 use std::fs::File;
 use std::io::BufReader;
@@ -85,9 +85,6 @@ fn make_cutout(
     let coord = LonLat::new(ra.to_radians(), dec.to_radians());
     let coord_pix = wcs.proj_lonlat(&coord).unwrap();
 
-    let coord_ref_pix = ImgXY::new(coord_pix.x(), coord_pix.y());
-    let coord_ref = wcs.unproj_lonlat(&coord_ref_pix).unwrap();
-
     let x_pix = coord_pix.x().round() as i64;
     let y_pix = coord_pix.y().round() as i64;
 
@@ -121,23 +118,35 @@ fn make_cutout(
     let rrange = lim_low_row as usize..lim_up_row as usize;
     let crange = lim_low_col as usize..lim_up_col as usize;
 
-    let img_desc = ImageDescription {
-        data_type: ImageType::Float,
-        dimensions: &[imsize.try_into().unwrap(), imsize.try_into().unwrap()],
+    let ctype3: std::string::String = hdu.read_key(&mut fptr, "CTYPE3").unwrap_or("".to_string());
+    let ctype4: std::string::String = hdu.read_key(&mut fptr, "CTYPE4").unwrap_or("".to_string());
+
+    let img_desc = if (ctype3.len() > 0) && (ctype4.len() == 0) {
+        ImageDescription {
+            data_type: ImageType::Float,
+            dimensions: &[1, imsize.try_into().unwrap(), imsize.try_into().unwrap()],
+        }
+    } else if (ctype3.len() > 0) && (ctype4.len() > 0) {
+        ImageDescription {
+            data_type: ImageType::Float,
+            dimensions: &[1, 1, imsize.try_into().unwrap(), imsize.try_into().unwrap()],
+        }
+    } else {
+        ImageDescription {
+            data_type: ImageType::Float,
+            dimensions: &[imsize.try_into().unwrap(), imsize.try_into().unwrap()],
+        }
     };
     let mut fptr_new = FitsFile::create(&outfile)
         .with_custom_primary(&img_desc)
         .open()?;
 
-    hdu.write_key(
-        &mut fptr_new,
-        "CRVAL1",
-        coord_ref.lon().to_degrees() + cdelt1.abs() / 2.0,
-    )?;
-    hdu.write_key(&mut fptr_new, "CRVAL2", coord_ref.lat().to_degrees())?;
+    copy_key_if_exists::<i64>("WCSAXES", &hdu, &mut fptr, &mut fptr_new)?;
+    let crpix1: i64 = hdu.read_key(&mut fptr, "CRPIX1").unwrap_or_else(|_| 0);
+    let crpix2: i64 = hdu.read_key(&mut fptr, "CRPIX2").unwrap_or_else(|_| 0);
 
-    hdu.write_key(&mut fptr_new, "CRPIX1", (imsize as f64 / 2.0).ceil() as u64)?;
-    hdu.write_key(&mut fptr_new, "CRPIX2", (imsize as f64 / 2.0).ceil() as u64)?;
+    hdu.write_key(&mut fptr_new, "CRPIX1", crpix1 - lim_low_row)?;
+    hdu.write_key(&mut fptr_new, "CRPIX2", crpix2 - lim_low_col)?;
 
     hdu.write_key(&mut fptr_new, "CDELT1", cdelt1)?;
     hdu.write_key(&mut fptr_new, "CDELT2", cdelt2)?;
@@ -151,18 +160,17 @@ fn make_cutout(
     hdu.write_key(&mut fptr_new, "CTYPE1", ctype1)?;
     hdu.write_key(&mut fptr_new, "CTYPE2", ctype2)?;
 
-    let ctype3: std::string::String = hdu.read_key(&mut fptr, "CTYPE3").unwrap_or("".to_string());
     if ctype3.len() > 0 {
         hdu.write_key(&mut fptr_new, "CTYPE3", ctype3.clone())?;
     }
 
-    let ctype4: std::string::String = hdu.read_key(&mut fptr, "CTYPE4").unwrap_or("".to_string());
     if ctype4.len() > 0 {
         hdu.write_key(&mut fptr_new, "CTYPE4", ctype4.clone())?;
     }
 
     copy_key_if_exists::<String>("RADESYS", &hdu, &mut fptr, &mut fptr_new)?;
     copy_key_if_exists::<String>("BUNIT", &hdu, &mut fptr, &mut fptr_new)?;
+    copy_key_if_exists::<f64>("BZERO", &hdu, &mut fptr, &mut fptr_new)?;
     copy_key_if_exists::<f64>("LONPOLE", &hdu, &mut fptr, &mut fptr_new)?;
     copy_key_if_exists::<f64>("LATPOLE", &hdu, &mut fptr, &mut fptr_new)?;
 
@@ -179,11 +187,32 @@ fn make_cutout(
         cutout_flat = hdu.read_region(&mut fptr, &[&rrange, &crange])?;
     }
     assert!(cutout_flat.len() == (imsize as usize).pow(2));
-    hdu.write_region(
-        &mut fptr_new,
-        &[&(0..imsize as usize), &(0..imsize as usize)],
-        &cutout_flat,
-    )?;
+    if ctype3.len() > 0 {
+        if ctype4.len() > 0 {
+            hdu.write_region(
+                &mut fptr_new,
+                &[
+                    &(0..imsize as usize),
+                    &(0..imsize as usize),
+                    &(0..1),
+                    &(0..1),
+                ],
+                &cutout_flat,
+            )?;
+        } else {
+            hdu.write_region(
+                &mut fptr_new,
+                &[&(0..imsize as usize), &(0..imsize as usize), &(0..1)],
+                &cutout_flat,
+            )?;
+        }
+    } else {
+        hdu.write_region(
+            &mut fptr_new,
+            &[&(0..imsize as usize), &(0..imsize as usize)],
+            &cutout_flat,
+        )?;
+    }
     drop(fptr_new);
 
     let mut fptr_new = FitsFile::edit(&outfile).unwrap();
