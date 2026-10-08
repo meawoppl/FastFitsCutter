@@ -1,8 +1,8 @@
 use clap::{ArgAction, Parser};
-use fitsio::hdu::FitsHdu;
-use fitsio::headers::{ReadsKey, WritesKey};
-use fitsio::images::{ImageDescription, ImageType};
-use fitsio::FitsFile;
+use fitsio_pure::compat::hdu::FitsHdu;
+use fitsio_pure::compat::headers::{ReadsKey, WritesKey};
+use fitsio_pure::compat::images::{ImageDescription, ImageType};
+use fitsio_pure::compat::FitsFile;
 use fitsrs::hdu::header::extension::image::Image;
 use fitsrs::hdu::header::Header;
 use rayon::prelude::*;

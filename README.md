@@ -1,14 +1,8 @@
 # Fast FITS Cutter
-Fast FITS Cutter uses the unsafe bindings to CFITSIO from `fitsio` to quickly make cutouts of FITS images by using the capability of reading only a small region instead of the entire image.
+Fast FITS Cutter makes cutouts of FITS images. FITS I/O goes through the pure-Rust [`fitsio-pure`](https://crates.io/crates/fitsio-pure) crate, so no CFITSIO installation is needed.
 
 ## Installation
-To install this package, first install CFITSIO e.g. through
-
-```bash
-dnf install cfitsio cfitsio-devel
-```
-
-Afterwards, simply clone the repository and run
+Clone the repository and run
 
 ```bash
 cargo build --release
