@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 clap = { version = "<4.5", features = ["derive"] }
 csv = "1.3.0"
-fitsio-pure = { version = "0.21.6", features = ["compat"] }
+fitsio-pure = { version = "0.22.0", features = ["compat"] }
 fitsrs = "0.2.11"
 ndarray = "0.15.6"
 rayon = "1.10.0"
